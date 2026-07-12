@@ -14,3 +14,6 @@ make android-test
 
 提交信息使用简洁的 Conventional Commit。Pull Request 应说明问题、安全与隐私影响、验证命令、
 新增环境变量和回滚方式。
+
+仓库提供 `ci/github-actions.yml`。维护者使用带 `workflow` scope 的 GitHub 身份将它复制到
+`.github/workflows/ci.yml` 后，即可启用自动门禁。
