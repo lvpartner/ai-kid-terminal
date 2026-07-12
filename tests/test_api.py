@@ -6,18 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from kid_terminal.app import (
-    file_sha256,
-    is_android_apk,
-    recent_turn_context,
-    rollout_eligible,
-    store_turn,
-)
+from kid_terminal.app import recent_turn_context, store_turn
 from kid_terminal.audio import G711Ulaw8kEncoder, RealtimeAudioPacer, linear16_to_ulaw
 from kid_terminal.config import Settings
 from kid_terminal.privacy import redact_private_text, summarize_messages
 from kid_terminal.prompts import PROMPT_VERSION, SYSTEM_PROMPT
 from kid_terminal.schemas import ConfigUpdate
+from kid_terminal.services.releases import file_sha256, is_android_apk, rollout_eligible
 
 
 def event(kind: str, **values):

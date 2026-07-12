@@ -5,8 +5,8 @@ from pathlib import Path
 
 import httpx
 
-from kid_terminal.app import is_android_apk
 from kid_terminal.config import get_settings
+from kid_terminal.services.releases import is_android_apk
 
 
 def main() -> None:

@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from typing import Protocol
 
 from .answer_validation import AnswerEnvelope
+from .providers import WebResearchResult
 
 
 class SpeechRecognizer(Protocol):
@@ -9,7 +10,7 @@ class SpeechRecognizer(Protocol):
 
 
 class SearchProvider(Protocol):
-    async def research(self, question: str): ...
+    async def research(self, question: str) -> WebResearchResult: ...
 
 
 class AnswerGenerator(Protocol):

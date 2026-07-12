@@ -12,10 +12,9 @@ from ..answer_policy import (
 from ..answer_validation import validate_answer
 from ..knowledge import CurriculumKnowledgeBase
 from ..official_sources import OfficialSourceRetriever, render_official_evidence
+from ..provider_interfaces import AnswerGenerator, SearchProvider
 from ..providers import ProviderError
-from ..text_answer import DeepSeekAnswerer
 from ..web_research import (
-    QwenTextSearchClient,
     WebEvidenceResult,
     WebEvidenceRetriever,
     build_research_instructions,
@@ -41,8 +40,8 @@ class TurnOrchestrator:
         knowledge: CurriculumKnowledgeBase,
         official_sources: OfficialSourceRetriever,
         web_sources: WebEvidenceRetriever,
-        web_search: QwenTextSearchClient,
-        answerer: DeepSeekAnswerer,
+        web_search: SearchProvider,
+        answerer: AnswerGenerator,
     ) -> None:
         self.knowledge = knowledge
         self.official_sources = official_sources

@@ -29,6 +29,7 @@ cd ai-kid-terminal
 
 详细步骤见 [自建与手机安装](docs/SELF_HOSTING.md)，系统设计见
 [架构说明](docs/ARCHITECTURE.md)，量化门槛见 [回答质量与性能](docs/PERFORMANCE.md)。
+六项结构与性能改造及过渡提示策略见 [优化清单](docs/OPTIMIZATIONS.md)。
 
 ## 开发
 

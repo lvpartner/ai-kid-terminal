@@ -1,5 +1,7 @@
 # 架构说明
 
+六项已实施的结构与性能门槛见 [优化清单](OPTIMIZATIONS.md)。
+
 ```text
 Android Kiosk
   └─ 家庭 WebSocket（PCM、控制、打断）
