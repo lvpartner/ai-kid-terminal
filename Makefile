@@ -3,7 +3,7 @@ DOCKER ?= docker
 -include .env
 export
 
-.PHONY: setup lint test release-gate knowledge benchmark up down deploy-api migrate demo status logs backup diagnose maintain install-maintenance run qwen-check qwen-voice-e2e android-test android-release android-publish android-personal-publish tls-check tls-up tls-down clean
+.PHONY: setup lint test release-gate knowledge benchmark up down deploy-api migrate demo status logs backup diagnose maintain install-maintenance run qwen-check qwen-voice-e2e android-test android-release android-publish android-personal-release android-personal-publish tls-check tls-up tls-down clean
 
 setup:
 	bash scripts/setup.sh
@@ -82,6 +82,10 @@ android-publish:
 		dist/ai-kid-terminal-$(VERSION_NAME).apk \
 		--version-code $(VERSION_CODE) --version-name $(VERSION_NAME) \
 		--notes "$(NOTES)" --rollout $(or $(ROLLOUT),100) --publish
+
+android-personal-release:
+	PERSONAL_API_BASE_URL=https://api.pfce.top \
+		bash scripts/build_personal_android_release.sh $(VERSION_CODE) $(VERSION_NAME)
 
 android-personal-publish:
 	bash scripts/publish_personal_android.sh $(VERSION_NAME)
