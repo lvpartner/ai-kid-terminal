@@ -66,12 +66,13 @@ class SecureTokenStore(context: Context) {
 
     /** One-time bridge from older builds whose server lived only in BuildConfig. */
     fun persistBundledServerUrl() {
-        if (preferences.contains("server_url")) return
+        val stored = preferences.getString("server_url", null)?.let(ServerConfig::normalize)
         val bundled = ServerConfig.normalize(BuildConfig.API_BASE_URL)
         val legacy = BuildConfig.LEGACY_API_BASE_URL
             .takeIf { token() != null }
             ?.let(ServerConfig::normalize)
-        (bundled ?: legacy)?.let { normalized ->
+        migratedServerUrl(stored, bundled, legacy)?.let { normalized ->
+            if (normalized == stored) return
             preferences.edit { putString("server_url", normalized) }
         }
     }
@@ -81,6 +82,11 @@ class SecureTokenStore(context: Context) {
         remove("token_ciphertext")
         remove("token_iv")
     }
+}
+
+internal fun migratedServerUrl(stored: String?, bundled: String?, legacy: String?): String? {
+    if (legacy != null && (stored == null || stored == bundled)) return legacy
+    return stored ?: bundled
 }
 
 private fun ByteArray.encodeBase64(): String =

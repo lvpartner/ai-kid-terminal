@@ -17,6 +17,38 @@ class ServerConfigTest {
     }
 
     @Test
+    fun legacyServerWinsWhenUpgradingAnEnrolledDevice() {
+        assertEquals(
+            "https://api.example.com",
+            migratedServerUrl(null, "https://api.invalid", "https://api.example.com"),
+        )
+    }
+
+    @Test
+    fun legacyServerRepairsPlaceholderPersistedByPreviousUpgrade() {
+        assertEquals(
+            "https://api.example.com",
+            migratedServerUrl(
+                "https://api.invalid",
+                "https://api.invalid",
+                "https://api.example.com",
+            ),
+        )
+    }
+
+    @Test
+    fun migrationPreservesExplicitServerConfiguration() {
+        assertEquals(
+            "https://family.example",
+            migratedServerUrl(
+                "https://family.example",
+                "https://api.invalid",
+                "https://api.example.com",
+            ),
+        )
+    }
+
+    @Test
     fun fourTapsWithinWindowExits() {
         val counter = ExitTapCounter()
         assertFalse(counter.register(1_000))
