@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity(), ProtocolClient.Listener {
             WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars(),
         )
         tokenStore = SecureTokenStore(this)
+        tokenStore.persistBundledServerUrl()
         importProvisioningConfig()
         CrashReporter.install(this)
         audio = AudioEngine(this)

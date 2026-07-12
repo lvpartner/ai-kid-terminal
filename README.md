@@ -28,7 +28,7 @@ cd ai-kid-terminal
 二维码或在首次启动页手工输入服务器地址与绑定码。
 
 详细步骤见 [自建与手机安装](docs/SELF_HOSTING.md)，系统设计见
-[架构说明](docs/ARCHITECTURE.md)。
+[架构说明](docs/ARCHITECTURE.md)，量化门槛见 [回答质量与性能](docs/PERFORMANCE.md)。
 
 ## 开发
 

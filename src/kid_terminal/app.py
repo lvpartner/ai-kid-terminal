@@ -52,6 +52,7 @@ from .prompts import DEFAULT_REMOTE_CONFIG, PROMPT_VERSION
 from .providers import BufferedAudioProvider, ProviderError, QwenRealtimeProvider, create_provider
 from .schemas import (
     ConfigUpdate,
+    DeviceChannelUpdate,
     EnrollmentCreate,
     EnrollmentRequest,
     HeartbeatRequest,
@@ -67,6 +68,7 @@ from .security import (
     token_hash,
 )
 from .services.turn_orchestrator import TurnOrchestrator
+from .services.turn_state import TurnState, TurnStateMachine
 from .text_answer import CosyVoiceSynthesizer, DeepSeekAnswerer, QwenASRClient
 from .web_research import (
     QwenTextSearchClient,
@@ -175,6 +177,14 @@ async def lifespan(_: FastAPI):
     async with SessionLocal() as db:
         await db.execute(update(Device).values(online=False))
         await db.commit()
+    await asyncio.gather(
+        qwen_asr.aclose(),
+        official_source_retriever.aclose(),
+        web_evidence_retriever.aclose(),
+        qwen_text_search.aclose(),
+        deepseek_answerer.aclose(),
+        cosyvoice_synthesizer.aclose(),
+    )
     await engine.dispose()
 
 
@@ -303,6 +313,7 @@ async def list_devices(db: AsyncSession = Depends(get_db)):
             "device_model": item.device_model,
             "security_patch": item.security_patch,
             "network_type": item.network_type,
+            "update_channel": item.update_channel,
         }
         for item in result.scalars()
     ]
@@ -318,6 +329,27 @@ async def revoke_device(device_id: str, db: AsyncSession = Depends(get_db)):
     db.add(AuditLog(action="device.revoke", target=device_id))
     await db.commit()
     return {"revoked": True}
+
+
+@app.post("/v1/admin/devices/{device_id}/update-channel", dependencies=[Depends(require_admin)])
+async def set_device_update_channel(
+    device_id: str,
+    payload: DeviceChannelUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    device = await db.get(Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="device not found")
+    device.update_channel = payload.channel
+    db.add(
+        AuditLog(
+            action="device.update_channel",
+            target=device_id,
+            detail={"channel": payload.channel},
+        )
+    )
+    await db.commit()
+    return {"device_id": device_id, "update_channel": device.update_channel}
 
 
 @app.post("/v1/admin/devices/{device_id}/rotate", dependencies=[Depends(require_admin)])
@@ -561,7 +593,7 @@ async def upload_release(
 
 @app.post("/v1/admin/releases/{version_code}/{action}", dependencies=[Depends(require_admin)])
 async def release_action(version_code: int, action: str, db: AsyncSession = Depends(get_db)):
-    if action not in {"publish", "pause", "resume", "rollback"}:
+    if action not in {"publish", "promote", "pause", "resume", "rollback"}:
         raise HTTPException(status_code=400, detail="unsupported action")
     item = await db.scalar(select(Release).where(Release.version_code == version_code))
     if not item:
@@ -569,20 +601,23 @@ async def release_action(version_code: int, action: str, db: AsyncSession = Depe
     path = settings.release_dir / item.filename
     if not path.is_file() or file_sha256(path) != item.sha256:
         raise HTTPException(status_code=409, detail="release file hash mismatch")
-    if action in {"publish", "resume"} and settings.environment == "production":
+    if action in {"publish", "promote", "resume"} and settings.environment == "production":
         if not is_android_apk(path):
             raise HTTPException(status_code=409, detail="production release is not a valid APK")
     item.status = {
         "publish": "published",
+        "promote": "published",
         "pause": "paused",
         "resume": "published",
         "rollback": "rolled_back",
     }[action]
-    if action in {"publish", "resume"}:
+    if action == "promote":
+        item.channel = "stable"
+    if action in {"publish", "promote", "resume"}:
         item.published_at = datetime.now(UTC)
     db.add(AuditLog(action=f"release.{action}", target=str(version_code)))
     await db.commit()
-    return {"version_code": version_code, "status": item.status}
+    return {"version_code": version_code, "status": item.status, "channel": item.channel}
 
 
 @app.get("/v1/device/releases/latest")
@@ -598,6 +633,9 @@ async def compatible_release(
             Release.status == "published",
             Release.min_android <= android_api,
             Release.version_code > current_version_code,
+            Release.channel.in_(
+                ["stable", "beta"] if device.update_channel == "beta" else ["stable"]
+            ),
         )
         .order_by(Release.version_code.desc())
     )
@@ -616,6 +654,7 @@ async def compatible_release(
             "sha256": item.sha256,
             "forced": item.forced,
             "release_notes": item.release_notes,
+            "channel": item.channel,
         }
     }
 
@@ -627,7 +666,13 @@ async def download_release(
     db: AsyncSession = Depends(get_db),
 ):
     item = await db.scalar(
-        select(Release).where(Release.version_code == version_code, Release.status == "published")
+        select(Release).where(
+            Release.version_code == version_code,
+            Release.status == "published",
+            Release.channel.in_(
+                ["stable", "beta"] if device.update_channel == "beta" else ["stable"]
+            ),
+        )
     )
     if not item or not rollout_eligible(device.id, item.rollout_percent):
         raise HTTPException(status_code=404, detail="release not found")
@@ -761,7 +806,6 @@ async def device_ws(ws: WebSocket):
         timestamps: deque[float] = deque()
         ai_text = ""
         user_text = ""
-        started = time.monotonic()
         response_task: asyncio.Task[None] | None = None
         response_output_complete = asyncio.Event()
         output_codec = (
@@ -879,11 +923,21 @@ async def device_ws(ws: WebSocket):
                         pacer = RealtimeAudioPacer() if encoder else None
                         outbound: asyncio.Queue[tuple[str, Any]] = asyncio.Queue(maxsize=512)
                         producer_task: asyncio.Task[None] | None = None
+                        context_task: asyncio.Task[str] | None = None
+                        turn_state = TurnStateMachine(entered_at=response_started)
                         strict_grounding = settings.strict_grounding and isinstance(
                             provider, BufferedAudioProvider | QwenRealtimeProvider
                         )
                         standalone_transcription = strict_grounding and deepseek_answerer.enabled
                         grounding_requested = False
+
+                        async def load_context() -> str:
+                            async with SessionLocal() as context_db:
+                                return await recent_turn_context(
+                                    context_db,
+                                    device.id,
+                                    turns=settings.context_turns,
+                                )
 
                         async def collect_provider_output() -> None:
                             nonlocal audio_bytes, audio_chunks
@@ -923,6 +977,9 @@ async def device_ws(ws: WebSocket):
                                 if standalone_transcription
                                 else collect_provider_output()
                             )
+                            if strict_grounding:
+                                context_task = asyncio.create_task(load_context())
+                                turn_state.transition(TurnState.TRANSCRIBING)
                             while True:
                                 kind, value = await outbound.get()
                                 if kind == "complete":
@@ -965,25 +1022,27 @@ async def device_ws(ws: WebSocket):
                                     int(config.get("grade_min", 1))
                                     + int(config.get("grade_max", 6))
                                 ) // 2
-                                async with SessionLocal() as context_db:
-                                    conversation_context = await recent_turn_context(
-                                        context_db,
-                                        device.id,
-                                        turns=settings.context_turns,
-                                    )
+                                turn_state.transition(TurnState.RESEARCHING)
+                                conversation_context = await context_task if context_task else ""
                                 prepared = await turn_orchestrator.prepare(
                                     resolved_user_text,
                                     grade=grade,
                                     conversation_context=conversation_context,
                                 )
+                                turn_state.transition(TurnState.VALIDATING)
                                 ai_text = prepared.text
                                 await ws_send(ws, {"type": "ai.text.delta", "text": ai_text})
+                                turn_state.transition(TurnState.SYNTHESIZING)
+                                first_audio = True
                                 async for value in cosyvoice_synthesizer.stream(ai_text):
                                     audio_bytes += len(value)
                                     audio_chunks += 1
                                     encoded = encoder.encode(value) if encoder else value
                                     if not encoded:
                                         continue
+                                    if first_audio:
+                                        turn_state.transition(TurnState.PLAYING)
+                                        first_audio = False
                                     if pacer:
                                         delay = pacer.delay_for(len(encoded))
                                         if delay > 0:
@@ -992,6 +1051,10 @@ async def device_ws(ws: WebSocket):
                                     if pacer:
                                         pacer.record_sent(len(encoded))
                                     wire_bytes += len(encoded)
+                                if turn_state.state == TurnState.SYNTHESIZING:
+                                    turn_state.transition(TurnState.COMPLETED)
+                                elif turn_state.state == TurnState.PLAYING:
+                                    turn_state.transition(TurnState.COMPLETED)
                             response_output_complete.set()
                             async with SessionLocal() as turn_db:
                                 await store_turn(
@@ -1002,8 +1065,12 @@ async def device_ws(ws: WebSocket):
                                     ai_text,
                                 )
                             connections.upstream_status = "ok"
-                            TURN_LATENCY.observe(time.monotonic() - started)
+                            TURN_LATENCY.observe(time.monotonic() - response_started)
+                        except asyncio.CancelledError:
+                            turn_state.interrupt()
+                            raise
                         except ProviderError as exc:
+                            turn_state.fail()
                             if exc.code == "account_unavailable":
                                 connections.upstream_status = "degraded"
                             logger.warning(
@@ -1032,17 +1099,28 @@ async def device_ws(ws: WebSocket):
                                 },
                             )
                         finally:
+                            if strict_grounding and turn_state.state not in {
+                                TurnState.COMPLETED,
+                                TurnState.INTERRUPTED,
+                                TurnState.FAILED,
+                            }:
+                                turn_state.fail()
                             if producer_task:
                                 producer_task.cancel()
                                 await asyncio.gather(producer_task, return_exceptions=True)
+                            if context_task:
+                                context_task.cancel()
+                                await asyncio.gather(context_task, return_exceptions=True)
                             logger.info(
                                 "voice response finished codec=%s chunks=%s source_bytes=%s "
-                                "wire_bytes=%s elapsed_ms=%s",
+                                "wire_bytes=%s elapsed_ms=%s state=%s stages_ms=%s",
                                 output_codec,
                                 audio_chunks,
                                 audio_bytes,
                                 wire_bytes,
                                 int((time.monotonic() - response_started) * 1000),
+                                turn_state.state.value,
+                                turn_state.durations_ms,
                                 extra={
                                     "device_id": device.id,
                                     "session_id": response_conversation_id,

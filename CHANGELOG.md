@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Reuse bounded provider HTTP connection pools and validate every redirect before access.
+- Require exact evidence spans for externally grounded claims before speech synthesis.
+- Add explicit turn states and privacy-safe stage latency logging.
+- Add Beta/Stable channels that promote the exact same signed APK without rebuilding.
+- Persist legacy server configuration so future public and maintainer APKs are identical.
+- Add the 60-question quality/performance release budget and GitHub CI.
+
 ## 0.3.0
 
 - 重构为中文单家庭自托管架构。

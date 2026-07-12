@@ -1,0 +1,10 @@
+{
+  "minimum_questions": 50,
+  "minimum_completed_rate": 0.98,
+  "minimum_mean_accuracy": 4.0,
+  "maximum_unsupported_precise_claims": 0,
+  "maximum_first_audio_p50_seconds": 4.0,
+  "maximum_first_audio_p95_seconds": 8.0,
+  "maximum_total_p95_seconds": 18.0,
+  "maximum_regression_fraction": 0.10
+}

@@ -36,7 +36,8 @@ async def test_deepseek_answer_is_json_bounded_and_disables_thinking():
                             "content": (
                                 '{"answer":"上海明天有雷雨。","needs_clarification":false,'
                                 '"claims":[{"text":"上海明天有雷雨",'
-                                '"source_ids":["weather-shanghai"]}]}'
+                                '"source_ids":["weather-shanghai"],'
+                                '"evidence_span":"明天有雷雨"}]}'
                             )
                         }
                     }
@@ -50,6 +51,7 @@ async def test_deepseek_answer_is_json_bounded_and_disables_thinking():
     envelope = await answerer.answer_envelope("只使用结构化天气证据")
     assert envelope.answer == "上海明天有雷雨。"
     assert envelope.claims[0].source_ids == ("weather-shanghai",)
+    assert envelope.claims[0].evidence_span == "明天有雷雨"
 
 
 async def test_deepseek_answer_rejects_invalid_or_oversized_output():

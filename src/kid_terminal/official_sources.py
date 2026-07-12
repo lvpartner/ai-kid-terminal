@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .text_answer import HTTP_LIMITS
+
 logger = logging.getLogger("kid_terminal")
 MAX_RESPONSE_BYTES = 2_000_000
 MAX_PROMPT_CHARS = 6_000
@@ -287,6 +289,13 @@ class OfficialSourceRetriever:
         self._cache: dict[str, tuple[float, OfficialEvidence]] = {}
         self._weather_cache: dict[str, tuple[float, OfficialEvidence]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._client = httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=httpx.Timeout(6, connect=3),
+            transport=transport,
+            headers={"User-Agent": USER_AGENT},
+            limits=HTTP_LIMITS,
+        )
         for source in sources:
             if not _host_allowed(source.url, source.allowed_domains):
                 raise ValueError(
@@ -294,6 +303,31 @@ class OfficialSourceRetriever:
                 )
             if source.max_age_seconds < 1:
                 raise ValueError(f"official source max age must be positive: {source.source_id}")
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def _allowed_get(
+        self,
+        url: str,
+        domains: frozenset[str],
+        *,
+        params: dict[str, object] | None = None,
+        accept: str,
+    ) -> httpx.Response:
+        current = str(httpx.URL(url, params=params)) if params else url
+        for redirect_count in range(4):
+            if not _host_allowed(current, domains):
+                raise ValueError("official source target is outside its allowlist")
+            response = await self._client.get(current, headers={"Accept": accept})
+            if not response.is_redirect:
+                response.raise_for_status()
+                return response
+            location = response.headers.get("location")
+            if not location or redirect_count == 3:
+                raise ValueError("official source exceeded redirect limit")
+            current = str(response.url.join(location))
+        raise ValueError("official source exceeded redirect limit")
 
     def _matching_sources(self, question: str) -> tuple[OfficialSourceSpec, ...]:
         lowered = question.lower()
@@ -319,29 +353,18 @@ class OfficialSourceRetriever:
         )
 
     async def _download(self, source: OfficialSourceSpec) -> OfficialEvidence:
-        timeout = httpx.Timeout(6, connect=3)
         source_url = self._resolved_url(source)
-        async with httpx.AsyncClient(
-            follow_redirects=True,
-            timeout=timeout,
-            transport=self._transport,
-            headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain,application/json"},
-        ) as client:
-            async with client.stream("GET", source_url) as response:
-                response.raise_for_status()
-                if not _host_allowed(str(response.url), source.allowed_domains):
-                    raise ValueError("official source redirected outside its allowlist")
-                content_type = response.headers.get("content-type", "").lower()
-                if not any(kind in content_type for kind in ("html", "text", "json")):
-                    raise ValueError("official source returned an unsupported content type")
-                chunks: list[bytes] = []
-                size = 0
-                async for chunk in response.aiter_bytes():
-                    size += len(chunk)
-                    if size > MAX_RESPONSE_BYTES:
-                        raise ValueError("official source response exceeded size limit")
-                    chunks.append(chunk)
-        body = b"".join(chunks)
+        response = await self._allowed_get(
+            source_url,
+            source.allowed_domains,
+            accept="text/html,text/plain,application/json",
+        )
+        content_type = response.headers.get("content-type", "").lower()
+        if not any(kind in content_type for kind in ("html", "text", "json")):
+            raise ValueError("official source returned an unsupported content type")
+        body = response.content
+        if len(body) > MAX_RESPONSE_BYTES:
+            raise ValueError("official source response exceeded size limit")
         text = extract_source_text(body, content_type)
         if not all(term.lower() in text.lower() for term in source.required_content_terms):
             raise ValueError("official source content markers were missing")
@@ -376,56 +399,46 @@ class OfficialSourceRetriever:
             return evidence
 
     async def _download_weather(self, location_query: str) -> OfficialEvidence:
-        timeout = httpx.Timeout(6, connect=3)
-        headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-        async with httpx.AsyncClient(
-            follow_redirects=True,
-            timeout=timeout,
-            transport=self._transport,
-            headers=headers,
-        ) as client:
-            geocoding = await client.get(
-                WEATHER_GEOCODING_URL,
-                params={"name": location_query, "count": 1, "language": "zh", "format": "json"},
-            )
-            geocoding.raise_for_status()
-            if not _host_allowed(str(geocoding.url), WEATHER_DOMAINS):
-                raise ValueError("weather geocoding redirected outside its allowlist")
-            geocoding_body = geocoding.content
-            if len(geocoding_body) > MAX_RESPONSE_BYTES:
-                raise ValueError("weather geocoding response exceeded size limit")
-            location_data = geocoding.json()
-            results = location_data.get("results", []) if isinstance(location_data, dict) else []
-            if not isinstance(results, list) or not results or not isinstance(results[0], dict):
-                raise ValueError("weather location was not found")
-            location = results[0]
-            latitude = location.get("latitude")
-            longitude = location.get("longitude")
-            timezone = location.get("timezone")
-            if not isinstance(latitude, int | float) or not isinstance(longitude, int | float):
-                raise ValueError("weather location coordinates were invalid")
-            if not isinstance(timezone, str) or not timezone:
-                raise ValueError("weather location timezone was invalid")
-            forecast = await client.get(
-                WEATHER_FORECAST_URL,
-                params={
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "timezone": timezone,
-                    "forecast_days": 3,
-                    "daily": (
-                        "weather_code,temperature_2m_max,temperature_2m_min,"
-                        "precipitation_probability_max"
-                    ),
-                },
-            )
-            forecast.raise_for_status()
-            if not _host_allowed(str(forecast.url), WEATHER_DOMAINS):
-                raise ValueError("weather forecast redirected outside its allowlist")
-            forecast_body = forecast.content
-            if len(forecast_body) > MAX_RESPONSE_BYTES:
-                raise ValueError("weather forecast response exceeded size limit")
-            forecast_data = forecast.json()
+        geocoding = await self._allowed_get(
+            WEATHER_GEOCODING_URL,
+            WEATHER_DOMAINS,
+            params={"name": location_query, "count": 1, "language": "zh", "format": "json"},
+            accept="application/json",
+        )
+        geocoding_body = geocoding.content
+        if len(geocoding_body) > MAX_RESPONSE_BYTES:
+            raise ValueError("weather geocoding response exceeded size limit")
+        location_data = geocoding.json()
+        results = location_data.get("results", []) if isinstance(location_data, dict) else []
+        if not isinstance(results, list) or not results or not isinstance(results[0], dict):
+            raise ValueError("weather location was not found")
+        location = results[0]
+        latitude = location.get("latitude")
+        longitude = location.get("longitude")
+        timezone = location.get("timezone")
+        if not isinstance(latitude, int | float) or not isinstance(longitude, int | float):
+            raise ValueError("weather location coordinates were invalid")
+        if not isinstance(timezone, str) or not timezone:
+            raise ValueError("weather location timezone was invalid")
+        forecast = await self._allowed_get(
+            WEATHER_FORECAST_URL,
+            WEATHER_DOMAINS,
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "timezone": timezone,
+                "forecast_days": 3,
+                "daily": (
+                    "weather_code,temperature_2m_max,temperature_2m_min,"
+                    "precipitation_probability_max"
+                ),
+            },
+            accept="application/json",
+        )
+        forecast_body = forecast.content
+        if len(forecast_body) > MAX_RESPONSE_BYTES:
+            raise ValueError("weather forecast response exceeded size limit")
+        forecast_data = forecast.json()
 
         daily = forecast_data.get("daily", {}) if isinstance(forecast_data, dict) else {}
         if not isinstance(daily, dict):

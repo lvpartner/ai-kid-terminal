@@ -251,6 +251,7 @@ def test_release_publish_select_download_and_hash(client, admin_headers, enrolle
         "version_name": "1.0.1-test",
         "min_android": 26,
         "rollout_percent": 100,
+        "channel": "stable",
     }
     upload = client.post(
         "/v1/admin/releases",
@@ -285,6 +286,39 @@ def test_unpublished_release_is_hidden(client, admin_headers, enrolled):
     )
     headers = {"Authorization": f"Bearer {enrolled['access_token']}"}
     assert client.get("/v1/device/releases/2001/download", headers=headers).status_code == 404
+
+
+def test_beta_release_uses_same_artifact_when_promoted(client, admin_headers, enrolled):
+    metadata = {"version_code": 3001, "version_name": "beta", "channel": "beta"}
+    upload = client.post(
+        "/v1/admin/releases",
+        headers=admin_headers,
+        data={"metadata": json.dumps(metadata)},
+        files={"file": ("beta.bin", b"one-artifact")},
+    )
+    digest = upload.json()["sha256"]
+    assert client.post("/v1/admin/releases/3001/publish", headers=admin_headers).status_code == 200
+    device_headers = {"Authorization": f"Bearer {enrolled['access_token']}"}
+    params = {"android_api": 35, "current_version_code": 2000}
+    assert (
+        client.get("/v1/device/releases/latest", headers=device_headers, params=params).json()[
+            "update"
+        ]
+        is None
+    )
+    changed = client.post(
+        f"/v1/admin/devices/{enrolled['device_id']}/update-channel",
+        headers=admin_headers,
+        json={"channel": "beta"},
+    )
+    assert changed.json()["update_channel"] == "beta"
+    beta = client.get("/v1/device/releases/latest", headers=device_headers, params=params).json()[
+        "update"
+    ]
+    assert beta["sha256"] == digest and beta["channel"] == "beta"
+    promoted = client.post("/v1/admin/releases/3001/promote", headers=admin_headers).json()
+    assert promoted["channel"] == "stable"
+    assert beta["sha256"] == digest
 
 
 def test_file_hash_streams_large_files(tmp_path):

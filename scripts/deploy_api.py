@@ -23,12 +23,13 @@ def main() -> None:
             response.raise_for_status()
             draining = True
             deadline = time.monotonic() + 600
-            while response.json()["active_responses"]:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("active voice response did not drain within 10 minutes")
-                time.sleep(1)
-                response = client.get("/v1/admin/activity", headers=headers)
-                response.raise_for_status()
+        while response.json()["active_responses"]:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("active voice response did not drain within 10 minutes")
+            time.sleep(1)
+            response = client.get("/v1/admin/activity", headers=headers)
+            response.raise_for_status()
+        docker("run", "--rm", "api", "alembic", "upgrade", "head")
         docker("up", "-d", "--no-build", "api")
         draining = False
     finally:

@@ -84,3 +84,8 @@ class ReleaseMetadata(BaseModel):
     rollout_percent: float = Field(default=100, ge=0, le=100)
     release_notes: str = Field(default="", max_length=4000)
     rollback_version_code: int | None = Field(default=None, gt=0)
+    channel: Literal["beta", "stable"] = "beta"
+
+
+class DeviceChannelUpdate(BaseModel):
+    channel: Literal["beta", "stable"]

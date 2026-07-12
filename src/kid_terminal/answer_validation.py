@@ -13,6 +13,7 @@ PRECISE_VALUE = re.compile(
 class AnswerClaim:
     text: str
     source_ids: tuple[str, ...] = ()
+    evidence_span: str = ""
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ def validate_answer(
     *,
     allowed_source_ids: set[str],
     evidence_required: bool,
+    evidence_by_source: dict[str, str] | None = None,
 ) -> str:
     answer = envelope.answer.strip()
     if not answer or len(answer) > 240:
@@ -50,6 +52,21 @@ def validate_answer(
             raise ProviderError(
                 "Claim references unknown evidence", retryable=False, code="claim_invalid"
             )
+        if evidence_required and claim.source_ids:
+            span = claim.evidence_span.strip()
+            if not span or len(span) > 300:
+                raise ProviderError(
+                    "Supported claim has no bounded evidence span",
+                    retryable=False,
+                    code="claim_invalid",
+                )
+            sources = evidence_by_source or {}
+            if not any(span in sources.get(source_id, "") for source_id in claim.source_ids):
+                raise ProviderError(
+                    "Evidence span is absent from referenced evidence",
+                    retryable=False,
+                    code="claim_invalid",
+                )
 
     precise_answer = bool(PRECISE_VALUE.search(answer))
     supported_claims = [claim for claim in envelope.claims if claim.source_ids]

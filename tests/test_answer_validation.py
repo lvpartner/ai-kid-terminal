@@ -12,6 +12,7 @@ def test_precise_external_claim_requires_known_source() -> None:
             AnswerClaim(
                 text="最高速度是407公里每小时",
                 source_ids=("bugatti-factory",),
+                evidence_span="407公里每小时",
             ),
         ),
     )
@@ -20,6 +21,7 @@ def test_precise_external_claim_requires_known_source() -> None:
             envelope,
             allowed_source_ids={"bugatti-factory"},
             evidence_required=True,
+            evidence_by_source={"bugatti-factory": "官方标称最高速度407公里每小时。"},
         )
         == envelope.answer
     )
@@ -53,6 +55,21 @@ def test_clarification_is_one_short_question() -> None:
             AnswerEnvelope("你问哪本书？它是谁写的？", True),
             allowed_source_ids=set(),
             evidence_required=False,
+        )
+
+
+def test_external_claim_rejects_fabricated_evidence_span() -> None:
+    envelope = AnswerEnvelope(
+        "最高速度是407公里每小时。",
+        False,
+        (AnswerClaim("最高速度是407公里每小时", ("factory",), "不存在的原文"),),
+    )
+    with pytest.raises(ProviderError, match="absent from referenced evidence"):
+        validate_answer(
+            envelope,
+            allowed_source_ids={"factory"},
+            evidence_required=True,
+            evidence_by_source={"factory": "The top speed is 407 km/h."},
         )
 
 

@@ -23,8 +23,12 @@ android {
         val bootstrapEnrollmentToken = providers.gradleProperty("BOOTSTRAP_ENROLLMENT_TOKEN")
             .orElse("")
             .get()
+        val legacyApiBaseUrl = providers.gradleProperty("LEGACY_API_BASE_URL")
+            .orElse("")
+            .get()
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("String", "EXPECTED_SIGNER_SHA256", "\"$expectedSigner\"")
+        buildConfigField("String", "LEGACY_API_BASE_URL", "\"$legacyApiBaseUrl\"")
         buildConfigField(
             "String",
             "BOOTSTRAP_ENROLLMENT_TOKEN",

@@ -64,6 +64,18 @@ class SecureTokenStore(context: Context) {
     fun serverUrl(): String? = preferences.getString("server_url", null)
         ?: ServerConfig.normalize(BuildConfig.API_BASE_URL)
 
+    /** One-time bridge from older builds whose server lived only in BuildConfig. */
+    fun persistBundledServerUrl() {
+        if (preferences.contains("server_url")) return
+        val bundled = ServerConfig.normalize(BuildConfig.API_BASE_URL)
+        val legacy = BuildConfig.LEGACY_API_BASE_URL
+            .takeIf { token() != null }
+            ?.let(ServerConfig::normalize)
+        (bundled ?: legacy)?.let { normalized ->
+            preferences.edit { putString("server_url", normalized) }
+        }
+    }
+
     fun clearIdentity() = preferences.edit {
         remove("device_id")
         remove("token_ciphertext")

@@ -36,6 +36,7 @@ class Device(Base):
     device_model: Mapped[str | None] = mapped_column(String(100))
     security_patch: Mapped[str | None] = mapped_column(String(20))
     network_type: Mapped[str | None] = mapped_column(String(30))
+    update_channel: Mapped[str] = mapped_column(String(20), default="stable", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     conversations: Mapped[list["Conversation"]] = relationship(cascade="all, delete-orphan")
 
@@ -115,6 +116,7 @@ class Release(Base):
     min_android: Mapped[int] = mapped_column(Integer, default=26)
     forced: Mapped[bool] = mapped_column(Boolean, default=False)
     rollout_percent: Mapped[float] = mapped_column(Float, default=100.0)
+    channel: Mapped[str] = mapped_column(String(20), default="beta", index=True)
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     release_notes: Mapped[str] = mapped_column(Text, default="")
     rollback_version_code: Mapped[int | None] = mapped_column(Integer)

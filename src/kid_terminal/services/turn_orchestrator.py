@@ -1,4 +1,5 @@
 import logging
+import time
 from dataclasses import dataclass
 
 from ..answer_policy import (
@@ -59,9 +60,11 @@ class TurnOrchestrator:
         if capability_answer := deterministic_capability_response(question):
             return PreparedAnswer(capability_answer, "capability_boundary")
 
+        started = time.monotonic()
         decision = route_question(question)
         product_research = question_needs_web_research(question)
         official_result = await self.official_sources.retrieve(question)
+        official_elapsed = time.monotonic()
         official_status = official_result.status
         official_evidence = render_official_evidence(official_result)
 
@@ -84,6 +87,7 @@ class TurnOrchestrator:
                     )
                 if web_result.verified:
                     break
+        research_elapsed = time.monotonic()
 
         strict_evidence = decision.route == AnswerRoute.CURRENT or product_research
         if strict_evidence and not official_result.verified and not web_result.verified:
@@ -92,6 +96,10 @@ class TurnOrchestrator:
         source_ids = {
             *(item.source_id for item in official_result.evidence),
             *(f"web-{item.sha256[:12]}" for item in web_result.evidence),
+        }
+        evidence_by_source = {
+            **{item.source_id: item.content for item in official_result.evidence},
+            **{f"web-{item.sha256[:12]}": item.content for item in web_result.evidence},
         }
         prompt = build_realtime_answer_instructions(
             question,
@@ -108,9 +116,18 @@ class TurnOrchestrator:
                 envelope,
                 allowed_source_ids=source_ids,
                 evidence_required=strict_evidence,
+                evidence_by_source=evidence_by_source,
             )
         except ProviderError as exc:
             logger.warning("answer preparation failed code=%s", exc.code or "unknown")
             return PreparedAnswer(SAFE_ANSWER_FAILURE, "answer_validation_failed")
+        logger.info(
+            "turn stages route=%s official_ms=%s research_ms=%s answer_ms=%s sources=%s",
+            decision.route.value,
+            round((official_elapsed - started) * 1000),
+            round((research_elapsed - official_elapsed) * 1000),
+            round((time.monotonic() - research_elapsed) * 1000),
+            len(source_ids),
+        )
         status = "verified" if strict_evidence else "stable_knowledge"
         return PreparedAnswer(answer, status, tuple(sorted(source_ids)))

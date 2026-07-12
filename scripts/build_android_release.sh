@@ -10,7 +10,8 @@ secret_dir="${ANDROID_RELEASE_SECRET_DIR:-$HOME/.config/ai-kid-terminal}"
 source "$secret_dir/signing.env"
 export ANDROID_SIGNING_STORE_FILE ANDROID_SIGNING_STORE_PASSWORD
 export ANDROID_SIGNING_KEY_ALIAS ANDROID_SIGNING_KEY_PASSWORD
-export ORG_GRADLE_PROJECT_API_BASE_URL="${API_BASE_URL:-https://api.invalid}"
+export ORG_GRADLE_PROJECT_API_BASE_URL="https://api.invalid"
+export ORG_GRADLE_PROJECT_LEGACY_API_BASE_URL="${API_BASE_URL:-}"
 export ORG_GRADLE_PROJECT_EXPECTED_SIGNER_SHA256="$(cat "$secret_dir/signer.sha256")"
 export ORG_GRADLE_PROJECT_APP_VERSION_CODE="$version_code"
 export ORG_GRADLE_PROJECT_APP_VERSION_NAME="$version_name"

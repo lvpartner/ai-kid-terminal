@@ -17,12 +17,22 @@ from .providers import ProviderError
 logger = logging.getLogger("kid_terminal")
 TTS_PATH = "/api/v1/services/audio/tts/SpeechSynthesizer"
 CHAT_PATH = "/compatible-mode/v1/chat/completions"
+HTTP_LIMITS = httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=30)
 
 
 class QwenASRClient:
     def __init__(self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
-        self._transport = transport
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url(),
+            headers={"Authorization": f"Bearer {settings.dashscope_api_key}"},
+            timeout=httpx.Timeout(30, connect=5),
+            transport=transport,
+            limits=HTTP_LIMITS,
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     def _base_url(self) -> str:
         if self.settings.qwen_workspace_id:
@@ -77,22 +87,16 @@ class QwenASRClient:
             "asr_options": {"language": "zh", "enable_itn": True},
         }
         try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url(),
-                headers={"Authorization": f"Bearer {self.settings.dashscope_api_key}"},
-                timeout=httpx.Timeout(30, connect=5),
-                transport=self._transport,
-            ) as client:
-                response: httpx.Response | None = None
-                for attempt in range(3):
-                    response = await client.post(CHAT_PATH, json=payload)
-                    if response.status_code != 429 and response.status_code < 500:
-                        break
-                    await asyncio.sleep(0.5 * 2**attempt)
-                assert response is not None
-                response.raise_for_status()
-                body = response.json()
-                transcript = self._transcript(body["choices"][0]["message"]["content"])
+            response: httpx.Response | None = None
+            for attempt in range(3):
+                response = await self._client.post(CHAT_PATH, json=payload)
+                if response.status_code != 429 and response.status_code < 500:
+                    break
+                await asyncio.sleep(0.5 * 2**attempt)
+            assert response is not None
+            response.raise_for_status()
+            body = response.json()
+            transcript = self._transcript(body["choices"][0]["message"]["content"])
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
             raise ProviderError(
                 f"Qwen ASR failed ({type(exc).__name__})",
@@ -112,7 +116,16 @@ class QwenASRClient:
 class DeepSeekAnswerer:
     def __init__(self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
-        self._transport = transport
+        self._client = httpx.AsyncClient(
+            base_url=settings.deepseek_base_url.rstrip("/"),
+            headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
+            timeout=httpx.Timeout(35, connect=5),
+            transport=transport,
+            limits=HTTP_LIMITS,
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     @property
     def enabled(self) -> bool:
@@ -140,9 +153,12 @@ class DeepSeekAnswerer:
                         "日期只能使用用户消息中标为已核验的证据；证据不足就用一句话说明无法核实。"
                         "稳定基础知识可以直接回答。claims只列答案中可核验的事实；精确数字、日期、"
                         "价格和名单必须填写证据中真实存在的source_id，不能发明source_id。"
+                        "每个有source_id的claim还必须填写evidence_span：从该来源原文逐字复制、"
+                        "能直接支撑该claim的最短片段，禁止改写或拼接。"
                         "需要向孩子追问时needs_clarification为true且只问一个问题。只输出JSON对象，"
                         '格式为{"answer":"...","needs_clarification":false,'
-                        '"claims":[{"text":"...","source_ids":["..."]}]}。'
+                        '"claims":[{"text":"...","source_ids":["..."],'
+                        '"evidence_span":"来源原文短片段"}]}。'
                     ),
                 },
                 {
@@ -158,23 +174,16 @@ class DeepSeekAnswerer:
             "max_tokens": 500,
             "stream": False,
         }
-        timeout = httpx.Timeout(35, connect=5)
         try:
-            async with httpx.AsyncClient(
-                base_url=self.settings.deepseek_base_url.rstrip("/"),
-                headers={"Authorization": f"Bearer {self.settings.deepseek_api_key}"},
-                timeout=timeout,
-                transport=self._transport,
-            ) as client:
-                response: httpx.Response | None = None
-                for attempt in range(3):
-                    response = await client.post("/chat/completions", json=payload)
-                    if response.status_code != 429 and response.status_code < 500:
-                        break
-                    await asyncio.sleep(0.5 * 2**attempt)
-                assert response is not None
-                response.raise_for_status()
-                body = response.json()
+            response: httpx.Response | None = None
+            for attempt in range(3):
+                response = await self._client.post("/chat/completions", json=payload)
+                if response.status_code != 429 and response.status_code < 500:
+                    break
+                await asyncio.sleep(0.5 * 2**attempt)
+            assert response is not None
+            response.raise_for_status()
+            body = response.json()
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
             raise ProviderError(
                 f"DeepSeek answer failed ({type(exc).__name__})",
@@ -194,6 +203,7 @@ class DeepSeekAnswerer:
                 AnswerClaim(
                     text=str(item["text"]).strip(),
                     source_ids=tuple(str(value) for value in item.get("source_ids", [])),
+                    evidence_span=str(item.get("evidence_span", "")).strip(),
                 )
                 for item in raw_claims
                 if isinstance(item, dict)
@@ -229,7 +239,19 @@ class DeepSeekAnswerer:
 class CosyVoiceSynthesizer:
     def __init__(self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
-        self._transport = transport
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url(),
+            headers={
+                "Authorization": f"Bearer {settings.dashscope_api_key}",
+                "X-DashScope-SSE": "enable",
+            },
+            timeout=httpx.Timeout(45, connect=5),
+            transport=transport,
+            limits=HTTP_LIMITS,
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     def _base_url(self) -> str:
         if self.settings.qwen_workspace_id:
@@ -247,30 +269,21 @@ class CosyVoiceSynthesizer:
             },
         }
         try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url(),
-                headers={
-                    "Authorization": f"Bearer {self.settings.dashscope_api_key}",
-                    "X-DashScope-SSE": "enable",
-                },
-                timeout=httpx.Timeout(45, connect=5),
-                transport=self._transport,
-            ) as client:
-                async with client.stream("POST", TTS_PATH, json=payload) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        event: dict[str, Any] = json.loads(line[5:].strip())
-                        encoded = event.get("output", {}).get("audio", {}).get("data", "")
-                        if not encoded:
-                            continue
-                        try:
-                            yield base64.b64decode(str(encoded), validate=True)
-                        except (ValueError, binascii.Error) as exc:
-                            raise ProviderError(
-                                "CosyVoice returned invalid audio", code="tts_invalid"
-                            ) from exc
+            async with self._client.stream("POST", TTS_PATH, json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    event: dict[str, Any] = json.loads(line[5:].strip())
+                    encoded = event.get("output", {}).get("audio", {}).get("data", "")
+                    if not encoded:
+                        continue
+                    try:
+                        yield base64.b64decode(str(encoded), validate=True)
+                    except (ValueError, binascii.Error) as exc:
+                        raise ProviderError(
+                            "CosyVoice returned invalid audio", code="tts_invalid"
+                        ) from exc
         except ProviderError:
             raise
         except (httpx.HTTPError, json.JSONDecodeError) as exc:

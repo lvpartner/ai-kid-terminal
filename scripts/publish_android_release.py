@@ -16,6 +16,7 @@ def main() -> None:
     parser.add_argument("--version-name", required=True)
     parser.add_argument("--notes", default="")
     parser.add_argument("--rollout", type=float, default=100)
+    parser.add_argument("--channel", choices=("beta", "stable"), default="beta")
     parser.add_argument("--forced", action="store_true")
     parser.add_argument("--publish", action="store_true", help="Required explicit release gate")
     args = parser.parse_args()
@@ -34,6 +35,7 @@ def main() -> None:
         "rollout_percent": args.rollout,
         "release_notes": args.notes,
         "rollback_version_code": None,
+        "channel": args.channel,
     }
     with args.apk.open("rb") as artifact, httpx.Client(timeout=60) as client:
         upload = client.post(
@@ -48,7 +50,7 @@ def main() -> None:
             headers=headers,
         )
         publish.raise_for_status()
-    print(f"published {args.version_name} ({args.version_code})")
+    print(f"published {args.version_name} ({args.version_code}) to {args.channel}")
 
 
 if __name__ == "__main__":

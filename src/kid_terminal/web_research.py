@@ -16,6 +16,7 @@ import httpx
 from .config import Settings
 from .official_sources import extract_source_text
 from .providers import WebResearchResult
+from .text_answer import HTTP_LIMITS
 
 logger = logging.getLogger("kid_terminal")
 MAX_SOURCE_BYTES = 1_000_000
@@ -114,9 +115,18 @@ class WebEvidenceRetriever:
         transport: httpx.AsyncBaseTransport | None = None,
         resolver: Callable[[str], Awaitable[tuple[str, ...]]] = _resolve_host,
     ) -> None:
-        self._transport = transport
         self._resolver = resolver
         self._cache: dict[str, tuple[float, WebEvidence]] = {}
+        self._client = httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=httpx.Timeout(6, connect=3),
+            transport=transport,
+            headers={"User-Agent": "AIKidTerminal-WebEvidence/0.3"},
+            limits=HTTP_LIMITS,
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     async def _safe_url(self, url: str) -> bool:
         parsed = urlparse(url)
@@ -136,18 +146,19 @@ class WebEvidenceRetriever:
     async def _fetch(self, url: str, question: str) -> WebEvidence:
         if not await self._safe_url(url):
             raise ValueError("research URL is not a safe public HTTPS target")
-        timeout = httpx.Timeout(6, connect=3)
-        async with httpx.AsyncClient(
-            follow_redirects=True,
-            timeout=timeout,
-            transport=self._transport,
-            headers={"User-Agent": "AIKidTerminal-WebEvidence/0.2"},
-        ) as client:
-            async with client.stream("GET", url) as response:
+        current_url = url
+        for redirect_count in range(4):
+            if not await self._safe_url(current_url):
+                raise ValueError("research URL is not a safe public HTTPS target")
+            async with self._client.stream("GET", current_url) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location or redirect_count == 3:
+                        raise ValueError("research source exceeded redirect limit")
+                    current_url = str(response.url.join(location))
+                    continue
                 response.raise_for_status()
                 final_url = str(response.url)
-                if not await self._safe_url(final_url):
-                    raise ValueError("research URL redirected to an unsafe target")
                 content_type = response.headers.get("content-type", "").lower()
                 if not any(kind in content_type for kind in ("html", "text", "json")):
                     raise ValueError("research source returned unsupported content")
@@ -158,6 +169,9 @@ class WebEvidenceRetriever:
                     if size > MAX_SOURCE_BYTES:
                         raise ValueError("research source exceeded size limit")
                     chunks.append(chunk)
+                break
+        else:  # pragma: no cover - loop always exits through break or exception
+            raise ValueError("research source exceeded redirect limit")
         body = b"".join(chunks)
         content = _excerpt(extract_source_text(body, content_type), question)
         if not content:
@@ -216,7 +230,16 @@ class QwenTextSearchClient:
         self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None
     ) -> None:
         self.settings = settings
-        self._transport = transport
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url(),
+            headers={"Authorization": f"Bearer {settings.dashscope_api_key}"},
+            timeout=httpx.Timeout(45, connect=5),
+            transport=transport,
+            limits=HTTP_LIMITS,
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     def _base_url(self) -> str:
         if self.settings.qwen_workspace_id:
@@ -233,22 +256,16 @@ class QwenTextSearchClient:
             "search_options": {"forced_search": True, "enable_source": True},
         }
         try:
-            async with httpx.AsyncClient(
-                base_url=self._base_url(),
-                headers={"Authorization": f"Bearer {self.settings.dashscope_api_key}"},
-                timeout=httpx.Timeout(45, connect=5),
-                transport=self._transport,
-            ) as client:
-                response: httpx.Response | None = None
-                for attempt in range(3):
-                    response = await client.post(CHAT_PATH, json=payload)
-                    if response.status_code != 429 and response.status_code < 500:
-                        break
-                    await asyncio.sleep(0.5 * 2**attempt)
-                assert response is not None
-                response.raise_for_status()
-                body = response.json()
-                content = str(body["choices"][0]["message"]["content"])
+            response: httpx.Response | None = None
+            for attempt in range(3):
+                response = await self._client.post(CHAT_PATH, json=payload)
+                if response.status_code != 429 and response.status_code < 500:
+                    break
+                await asyncio.sleep(0.5 * 2**attempt)
+            assert response is not None
+            response.raise_for_status()
+            body = response.json()
+            content = str(body["choices"][0]["message"]["content"])
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
             logger.warning("Qwen text search failed error=%s", type(exc).__name__)
             return WebResearchResult(text="", search_count=0, strategy="text_search_error")
