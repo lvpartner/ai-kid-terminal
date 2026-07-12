@@ -3,9 +3,11 @@ from pathlib import Path
 
 from kid_terminal.answer_policy import (
     AnswerRoute,
+    EvidenceTier,
     build_realtime_answer_instructions,
     deterministic_capability_response,
     deterministic_issues,
+    evidence_tier,
     question_may_be_ambiguous,
     question_needs_web_research,
     route_question,
@@ -109,6 +111,15 @@ def test_product_facts_trigger_research_and_preserve_price_scope():
     assert "价格必须说明版本、年份、币种和价格类型" in prompt
     assert "静默搜索时" in prompt
     assert "不能覆盖服务端结果" in prompt
+
+
+def test_evidence_policy_is_risk_tiered() -> None:
+    assert evidence_tier("熊猫是什么动物？") == EvidenceTier.STABLE
+    assert evidence_tier("这款汽车现在多少钱？") == EvidenceTier.CORROBORATED
+    assert evidence_tier("现在谁是联合国秘书长？") == EvidenceTier.CORROBORATED
+    assert evidence_tier("儿童发烧应该吃什么药、吃几片？") == EvidenceTier.AUTHORITATIVE
+    assert evidence_tier("现任总统是谁？") == EvidenceTier.AUTHORITATIVE
+    assert evidence_tier("着火了怎么办？") == EvidenceTier.STABLE
 
 
 def test_curriculum_kb_returns_attributed_evidence(tmp_path: Path):

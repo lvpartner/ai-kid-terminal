@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from kid_terminal.answer_validation import AnswerClaim, AnswerEnvelope
 from kid_terminal.official_sources import OfficialEvidence, OfficialRetrievalResult
 from kid_terminal.services.turn_orchestrator import SAFE_RESEARCH_FAILURE, TurnOrchestrator
-from kid_terminal.web_research import WebEvidenceResult
+from kid_terminal.web_research import WebEvidence, WebEvidenceResult
 
 
 class FakeKnowledge:
@@ -24,6 +24,23 @@ class FailedOfficialSources:
 class FakeWebSources:
     async def retrieve(self, question: str, research):
         return WebEvidenceResult(status="no_search_sources")
+
+
+class VerifiedNonOfficialWebSources:
+    async def retrieve(self, question: str, research):
+        now = datetime.now(UTC)
+        return WebEvidenceResult(
+            status="verified",
+            evidence=(
+                WebEvidence(
+                    url="https://example.com/article",
+                    fetched_at=now,
+                    expires_at=now + timedelta(minutes=10),
+                    sha256="1" * 64,
+                    content="这是一段未经权威机构发布的内容。",
+                ),
+            ),
+        )
 
 
 class FakeWebSearch:
@@ -141,3 +158,18 @@ async def test_claim_shape_is_retried_once_before_failing_closed() -> None:
     result = await service.prepare("布加迪速度是多少？", grade=3, conversation_context="")
     assert result.text == "最高速度是407公里。"
     assert answerer.calls == 2
+
+
+async def test_serious_question_rejects_non_authoritative_web_only() -> None:
+    answerer = FakeAnswerer()
+    service = TurnOrchestrator(
+        knowledge=FakeKnowledge(),
+        official_sources=FailedOfficialSources(),
+        web_sources=VerifiedNonOfficialWebSources(),
+        web_search=FakeWebSearch(),
+        answerer=answerer,
+    )
+    result = await service.prepare("儿童发烧吃什么药？", grade=3, conversation_context="")
+    assert result.evidence_status == "authoritative_evidence_unavailable"
+    assert result.text == SAFE_RESEARCH_FAILURE
+    assert answerer.calls == 0

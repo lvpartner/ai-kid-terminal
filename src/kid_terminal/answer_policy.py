@@ -14,6 +14,12 @@ class AnswerRoute(StrEnum):
     CREATIVE = "creative"
 
 
+class EvidenceTier(StrEnum):
+    STABLE = "stable"
+    CORROBORATED = "corroborated_web"
+    AUTHORITATIVE = "authoritative"
+
+
 OFFICIAL_DOMAINS = {
     "gov.cn",
     "moe.gov.cn",
@@ -25,6 +31,13 @@ OFFICIAL_DOMAINS = {
     "cnsa.gov.cn",
     "cma.gov.cn",
     "stats.gov.cn",
+    "cdc.gov",
+    "nih.gov",
+    "nhs.uk",
+    "gov.uk",
+    "pbc.gov.cn",
+    "samr.gov.cn",
+    "npc.gov.cn",
     "people.com.cn",
     "xinhuanet.com",
 }
@@ -131,6 +144,39 @@ def question_needs_web_research(question: str) -> bool:
         "how fast",
     )
     return any(marker in lowered for marker in markers)
+
+
+def evidence_tier(question: str, decision: PolicyDecision | None = None) -> EvidenceTier:
+    selected = decision or route_question(question)
+    if selected.route in {AnswerRoute.SAFETY, AnswerRoute.CREATIVE}:
+        return EvidenceTier.STABLE
+    authoritative_markers = (
+        "吃什么药",
+        "用药",
+        "剂量",
+        "几片",
+        "发烧",
+        "症状",
+        "看医生",
+        "犯法吗",
+        "法律",
+        "报警",
+        "投资",
+        "股票",
+        "转账",
+        "银行卡",
+        "利息",
+        "现任总统",
+        "现任主席",
+        "现任总理",
+        "现任首相",
+        "选举结果",
+    )
+    if any(marker in question for marker in authoritative_markers):
+        return EvidenceTier.AUTHORITATIVE
+    if selected.route == AnswerRoute.CURRENT or question_needs_web_research(question):
+        return EvidenceTier.CORROBORATED
+    return EvidenceTier.STABLE
 
 
 def deterministic_capability_response(question: str) -> str:

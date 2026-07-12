@@ -4,8 +4,11 @@ from dataclasses import dataclass
 
 from ..answer_policy import (
     AnswerRoute,
+    EvidenceTier,
     build_realtime_answer_instructions,
     deterministic_capability_response,
+    evidence_tier,
+    official_url,
     question_needs_web_research,
     route_question,
 )
@@ -61,6 +64,7 @@ class TurnOrchestrator:
 
         started = time.monotonic()
         decision = route_question(question)
+        tier = evidence_tier(question, decision)
         product_research = question_needs_web_research(question)
         official_result = await self.official_sources.retrieve(question)
         official_elapsed = time.monotonic()
@@ -68,7 +72,9 @@ class TurnOrchestrator:
 
         web_result = WebEvidenceResult(status="not_needed")
         needs_web = official_status != "verified" and (
-            product_research or decision.route == AnswerRoute.CURRENT
+            product_research
+            or decision.route == AnswerRoute.CURRENT
+            or tier == EvidenceTier.AUTHORITATIVE
         )
         if needs_web:
             web_result = WebEvidenceResult(status="research_error")
@@ -86,14 +92,25 @@ class TurnOrchestrator:
                     break
         research_elapsed = time.monotonic()
 
-        strict_evidence = decision.route == AnswerRoute.CURRENT or product_research
+        strict_evidence = tier != EvidenceTier.STABLE
         if strict_evidence and not official_result.verified and not web_result.verified:
             return PreparedAnswer(SAFE_RESEARCH_FAILURE, "evidence_unavailable")
 
+        authoritative_evidence = official_result.verified or (
+            web_result.verified and any(official_url(item.url) for item in web_result.evidence)
+        )
+        if tier == EvidenceTier.AUTHORITATIVE and not authoritative_evidence:
+            return PreparedAnswer(SAFE_RESEARCH_FAILURE, "authoritative_evidence_unavailable")
+
         official_evidence = (
             render_official_evidence(official_result)
-            if strict_evidence or official_result.verified
-            else "本题属于稳定基础知识，不要求当轮官方来源；不得因此拒答。"
+            if official_result.verified
+            else (
+                "本题没有预登记官方来源。风险策略允许使用下方经过服务器独立抓取和校验的网页证据；"
+                "不得仅因缺少预登记来源而拒答。"
+                if web_result.verified
+                else "本题属于稳定基础知识，不要求当轮官方来源；不得因此拒答。"
+            )
         )
 
         source_ids = {
@@ -141,8 +158,9 @@ class TurnOrchestrator:
             )
             return PreparedAnswer(SAFE_ANSWER_FAILURE, "answer_validation_failed")
         logger.info(
-            "turn stages route=%s official_ms=%s research_ms=%s answer_ms=%s sources=%s",
+            "turn stages route=%s tier=%s official_ms=%s research_ms=%s answer_ms=%s sources=%s",
             decision.route.value,
+            tier.value,
             round((official_elapsed - started) * 1000),
             round((research_elapsed - official_elapsed) * 1000),
             round((time.monotonic() - research_elapsed) * 1000),
