@@ -124,6 +124,7 @@ class TurnOrchestrator:
                 except ProviderError as exc:
                     if attempt or exc.code != "claim_invalid":
                         raise
+                    logger.info("answer validation retry reason=%s", str(exc))
                     prompt += (
                         "\n上次结构校验失败。重新输出时，每个claims.text必须逐字复制answer中的"
                         "一个连续事实片段；evidence_span必须逐字复制对应来源中的连续原文。"
