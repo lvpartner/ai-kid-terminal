@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity(), ProtocolClient.Listener {
         audio = AudioEngine(this)
         protocol = ProtocolClient(tokenStore, this)
         UpdateScheduler.schedule(this)
-        if (tokenStore.token() == null) {
+        if (tokenStore.token() == null || tokenStore.serverUrl() == null) {
             setContentView(createSetupScreen())
             enrollFromProvisioningIntent()
         } else {
@@ -265,6 +265,9 @@ class MainActivity : ComponentActivity(), ProtocolClient.Listener {
     private fun importProvisioningConfig() {
         val server = intent.getStringExtra("server_url")
             ?: intent.data?.getQueryParameter("server")
+        val bindingCode = intent.getStringExtra("enrollment_token")
+            ?: intent.data?.getQueryParameter("token")
+        if (server != null && bindingCode != null) tokenStore.clearIdentity()
         if (server != null) tokenStore.saveServerUrl(server)
     }
 
