@@ -23,7 +23,11 @@ Build and publish later versions with the same key:
 ```bash
 make android-release VERSION_CODE=2 VERSION_NAME=0.1.1
 make android-publish VERSION_CODE=2 VERSION_NAME=0.1.1 NOTES="Pilot fixes" ROLLOUT=100
+make android-personal-publish VERSION_NAME=0.1.1
 ```
+
+Public releases keep versioned GitHub download URLs. The personal production APK is atomically
+replaced at `/install/ai-kid-terminal.apk`, so its download URL remains stable across versions.
 
 Public builds do not embed a server or binding token; the runtime setup screen accepts both. The client
 downloads only published compatible releases, verifies size, SHA-256, and the pinned signing
