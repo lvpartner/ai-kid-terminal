@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- Complete the six-item architecture and performance implementation matrix.
+- Split release HTTP routes and artifact policy out of the main WebSocket application.
+- Use provider protocols in orchestration and expose bounded per-stage latency metrics.
+- Remove semantic waiting copy; the kiosk now stays silent and shows only a neutral visual cue.
+
 ## 0.4.0
 
 - Reuse bounded provider HTTP connection pools and validate every redirect before access.
