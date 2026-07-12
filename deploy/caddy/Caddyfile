@@ -1,0 +1,26 @@
+{$TLS_HOST} {
+	@private path /v1/admin/* /metrics /docs /docs/* /redoc /redoc/* /openapi.json
+	respond @private 404
+
+	handle /install/* {
+		root * /srv/bootstrap
+		header Cache-Control "private, no-store"
+		header Content-Disposition "attachment; filename=ai-kid-terminal.apk"
+		file_server
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	handle {
+		reverse_proxy api:8000
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

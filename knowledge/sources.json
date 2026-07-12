@@ -1,0 +1,20 @@
+[
+  {"id":"plan","title":"义务教育课程方案（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582343217634.pdf","authority":"中华人民共和国教育部","subject":"课程方案"},
+  {"id":"ethics","title":"义务教育道德与法治课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582343475848.pdf","authority":"中华人民共和国教育部","subject":"道德与法治"},
+  {"id":"chinese","title":"义务教育语文课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582344386456.pdf","authority":"中华人民共和国教育部","subject":"语文"},
+  {"id":"history","title":"义务教育历史课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582345700037.pdf","authority":"中华人民共和国教育部","subject":"历史"},
+  {"id":"math","title":"义务教育数学课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220510531636118932.pdf","authority":"中华人民共和国教育部","subject":"数学"},
+  {"id":"english","title":"义务教育英语课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582349487953.pdf","authority":"中华人民共和国教育部","subject":"英语"},
+  {"id":"japanese","title":"义务教育日语课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020230605524874315398.pdf","authority":"中华人民共和国教育部","subject":"日语"},
+  {"id":"russian","title":"义务教育俄语课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582353002089.pdf","authority":"中华人民共和国教育部","subject":"俄语"},
+  {"id":"geography","title":"义务教育地理课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582354066450.pdf","authority":"中华人民共和国教育部","subject":"地理"},
+  {"id":"science","title":"义务教育科学课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582355009892.pdf","authority":"中华人民共和国教育部","subject":"科学"},
+  {"id":"physics","title":"义务教育物理课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582357585169.pdf","authority":"中华人民共和国教育部","subject":"物理"},
+  {"id":"chemistry","title":"义务教育化学课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020230605524875861384.pdf","authority":"中华人民共和国教育部","subject":"化学"},
+  {"id":"biology","title":"义务教育生物学课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582359998122.pdf","authority":"中华人民共和国教育部","subject":"生物学"},
+  {"id":"it","title":"义务教育信息科技课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582361024968.pdf","authority":"中华人民共和国教育部","subject":"信息科技"},
+  {"id":"pe","title":"义务教育体育与健康课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582362336303.pdf","authority":"中华人民共和国教育部","subject":"体育与健康"},
+  {"id":"arts","title":"义务教育艺术课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582364678888.pdf","authority":"中华人民共和国教育部","subject":"艺术"},
+  {"id":"labor","title":"义务教育劳动课程标准（2022年版）","url":"https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582367012450.pdf","authority":"中华人民共和国教育部","subject":"劳动"},
+  {"id":"xes-public","title":"学而思轻课小学数学公开课程体系说明","url":"https://www.xueersi.cn/shuxue","authority":"北京学而思教育科技有限公司","subject":"数学思维","public_summary":"官网公开说明课程承接义务教育数学课程标准，以七大能力体系归类知识，采用启发式教学，重视独立思考、解决问题、过程性鼓励和学练测反馈。本知识库不包含付费课程、题库或教材正文。"}
+]

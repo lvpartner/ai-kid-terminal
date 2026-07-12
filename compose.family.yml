@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////app/data/kid-terminal.db
+      HOST: 0.0.0.0
+      PORT: 8000
+      RELEASE_DIR: /app/releases
+    command:
+      - sh
+      - -c
+      - >-
+        alembic upgrade head && exec uvicorn kid_terminal.app:app
+        --host 0.0.0.0 --port 8000 --ws-max-size 1048576
+    ports:
+      - "${FAMILY_BIND_HOST:-0.0.0.0}:${FAMILY_PORT:-8000}:8000"
+    volumes:
+      - family_data:/app/data
+      - family_releases:/app/releases
+    security_opt: [no-new-privileges=true]
+    cap_drop: [ALL]
+
+volumes:
+  family_data:
+  family_releases:

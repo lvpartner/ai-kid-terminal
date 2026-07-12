@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">儿童 AI 终端</string>
+    <string name="device_admin_description">将这台儿童专用手机锁定在语音问答界面。</string>
+    <string name="voice_button">按住说话</string>
+    <string name="battery_unknown" formatted="false">--%</string>
+    <string name="battery_percent">%1$d%%</string>
+    <string name="setup_title">连接家庭服务器</string>
+    <string name="setup_server_hint">服务器地址，例如 http://192.168.1.20:8000</string>
+    <string name="setup_code_hint">一次性绑定码</string>
+    <string name="setup_connect">连接并进入儿童模式</string>
+    <string name="setup_invalid">请检查服务器地址和绑定码。</string>
+    <string name="setup_failed">连接失败，请确认手机和服务器在同一 Wi-Fi。</string>
+    <string name="thinking">正在认真查找答案…</string>
+    <string name="connection_unavailable">连接暂时不可用，请再试一次。</string>
+</resources>

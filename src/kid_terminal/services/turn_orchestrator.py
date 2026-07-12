@@ -1,0 +1,116 @@
+import logging
+from dataclasses import dataclass
+
+from ..answer_policy import (
+    AnswerRoute,
+    build_realtime_answer_instructions,
+    deterministic_capability_response,
+    question_needs_web_research,
+    route_question,
+)
+from ..answer_validation import validate_answer
+from ..knowledge import CurriculumKnowledgeBase
+from ..official_sources import OfficialSourceRetriever, render_official_evidence
+from ..providers import ProviderError
+from ..text_answer import DeepSeekAnswerer
+from ..web_research import (
+    QwenTextSearchClient,
+    WebEvidenceResult,
+    WebEvidenceRetriever,
+    build_research_instructions,
+    render_web_evidence,
+)
+
+logger = logging.getLogger("kid_terminal")
+SAFE_RESEARCH_FAILURE = "这个问题我暂时没有找到可靠资料，所以先不乱猜。"
+SAFE_ANSWER_FAILURE = "我刚才没能可靠地组织好答案，请你稍后再问一次。"
+
+
+@dataclass(frozen=True)
+class PreparedAnswer:
+    text: str
+    evidence_status: str
+    source_ids: tuple[str, ...] = ()
+
+
+class TurnOrchestrator:
+    def __init__(
+        self,
+        *,
+        knowledge: CurriculumKnowledgeBase,
+        official_sources: OfficialSourceRetriever,
+        web_sources: WebEvidenceRetriever,
+        web_search: QwenTextSearchClient,
+        answerer: DeepSeekAnswerer,
+    ) -> None:
+        self.knowledge = knowledge
+        self.official_sources = official_sources
+        self.web_sources = web_sources
+        self.web_search = web_search
+        self.answerer = answerer
+
+    async def prepare(
+        self,
+        question: str,
+        *,
+        grade: int,
+        conversation_context: str,
+    ) -> PreparedAnswer:
+        if capability_answer := deterministic_capability_response(question):
+            return PreparedAnswer(capability_answer, "capability_boundary")
+
+        decision = route_question(question)
+        product_research = question_needs_web_research(question)
+        official_result = await self.official_sources.retrieve(question)
+        official_status = official_result.status
+        official_evidence = render_official_evidence(official_result)
+
+        web_result = WebEvidenceResult(status="not_needed")
+        needs_web = official_status != "verified" and (
+            product_research
+            or (decision.route == AnswerRoute.CURRENT and official_status == "not_configured")
+        )
+        if needs_web:
+            web_result = WebEvidenceResult(status="research_error")
+            for attempt in range(2):
+                try:
+                    research = await self.web_search.research(build_research_instructions(question))
+                    web_result = await self.web_sources.retrieve(question, research)
+                except ProviderError as exc:
+                    logger.warning(
+                        "web research failed attempt=%s code=%s",
+                        attempt + 1,
+                        exc.code or "unknown",
+                    )
+                if web_result.verified:
+                    break
+
+        strict_evidence = decision.route == AnswerRoute.CURRENT or product_research
+        if strict_evidence and not official_result.verified and not web_result.verified:
+            return PreparedAnswer(SAFE_RESEARCH_FAILURE, "evidence_unavailable")
+
+        source_ids = {
+            *(item.source_id for item in official_result.evidence),
+            *(f"web-{item.sha256[:12]}" for item in web_result.evidence),
+        }
+        prompt = build_realtime_answer_instructions(
+            question,
+            grade,
+            self.knowledge.search(question, limit=4),
+            version=1,
+            conversation_context=conversation_context,
+            official_evidence=official_evidence,
+            web_evidence=render_web_evidence(web_result),
+        )
+        try:
+            envelope = await self.answerer.answer_envelope(prompt)
+            answer = validate_answer(
+                envelope,
+                allowed_source_ids=source_ids,
+                evidence_required=strict_evidence,
+            )
+        except ProviderError as exc:
+            logger.warning("answer preparation failed code=%s", exc.code or "unknown")
+            return PreparedAnswer(SAFE_ANSWER_FAILURE, "answer_validation_failed")
+        status = "verified" if strict_evidence else "stable_knowledge"
+        return PreparedAnswer(answer, status, tuple(sorted(source_ids)))

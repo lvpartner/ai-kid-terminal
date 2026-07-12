@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Kid Terminal bounded maintenance
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@@PROJECT_ROOT@@
+ExecStart=@@PROJECT_ROOT@@/scripts/maintenance.sh
+User=root
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=@@PROJECT_ROOT@@/backups
+ProtectHome=read-only
+

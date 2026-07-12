@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily AI Kid Terminal maintenance timer
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 Asia/Shanghai
+RandomizedDelaySec=15m
+Persistent=true
+Unit=ai-kid-terminal-maintenance.service
+
+[Install]
+WantedBy=timers.target
+
