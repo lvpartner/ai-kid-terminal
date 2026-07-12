@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from .providers import ProviderError
 
@@ -23,6 +24,25 @@ class AnswerEnvelope:
     claims: tuple[AnswerClaim, ...] = ()
 
 
+def _claim_matches_answer(claim: str, answer: str) -> bool:
+    compact_claim = re.sub(r"[^\w\u4e00-\u9fff]", "", claim).casefold()
+    compact_answer = re.sub(r"[^\w\u4e00-\u9fff]", "", answer).casefold()
+    if not compact_claim:
+        return False
+    return (
+        compact_claim in compact_answer
+        or SequenceMatcher(None, compact_claim, compact_answer).ratio() >= 0.55
+    )
+
+
+def _evidence_contains_span(evidence: str, span: str) -> bool:
+    if span in evidence:
+        return True
+    compact_span = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]", "", span).casefold()
+    compact_evidence = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]", "", evidence).casefold()
+    return len(compact_span) >= 4 and compact_span in compact_evidence
+
+
 def validate_answer(
     envelope: AnswerEnvelope,
     *,
@@ -43,7 +63,7 @@ def validate_answer(
         return answer
 
     for claim in envelope.claims:
-        if evidence_required and (not claim.text or claim.text not in answer):
+        if evidence_required and not _claim_matches_answer(claim.text, answer):
             raise ProviderError(
                 "Claim ledger does not match answer", retryable=False, code="claim_invalid"
             )
@@ -61,7 +81,10 @@ def validate_answer(
                     code="claim_invalid",
                 )
             sources = evidence_by_source or {}
-            if not any(span in sources.get(source_id, "") for source_id in claim.source_ids):
+            if not any(
+                _evidence_contains_span(sources.get(source_id, ""), span)
+                for source_id in claim.source_ids
+            ):
                 raise ProviderError(
                     "Evidence span is absent from referenced evidence",
                     retryable=False,

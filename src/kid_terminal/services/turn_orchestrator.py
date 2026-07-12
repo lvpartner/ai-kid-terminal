@@ -111,15 +111,30 @@ class TurnOrchestrator:
             web_evidence=render_web_evidence(web_result),
         )
         try:
-            envelope = await self.answerer.answer_envelope(prompt)
-            answer = validate_answer(
-                envelope,
-                allowed_source_ids=source_ids,
-                evidence_required=strict_evidence,
-                evidence_by_source=evidence_by_source,
-            )
+            answer = ""
+            for attempt in range(2):
+                envelope = await self.answerer.answer_envelope(prompt)
+                try:
+                    answer = validate_answer(
+                        envelope,
+                        allowed_source_ids=source_ids,
+                        evidence_required=strict_evidence,
+                        evidence_by_source=evidence_by_source,
+                    )
+                    break
+                except ProviderError as exc:
+                    if attempt or exc.code != "claim_invalid":
+                        raise
+                    prompt += (
+                        "\n上次结构校验失败。重新输出时，每个claims.text必须逐字复制answer中的"
+                        "一个连续事实片段；evidence_span必须逐字复制对应来源中的连续原文。"
+                    )
         except ProviderError as exc:
-            logger.warning("answer preparation failed code=%s", exc.code or "unknown")
+            logger.warning(
+                "answer preparation failed code=%s reason=%s",
+                exc.code or "unknown",
+                str(exc),
+            )
             return PreparedAnswer(SAFE_ANSWER_FAILURE, "answer_validation_failed")
         logger.info(
             "turn stages route=%s official_ms=%s research_ms=%s answer_ms=%s sources=%s",

@@ -73,6 +73,40 @@ def test_external_claim_rejects_fabricated_evidence_span() -> None:
         )
 
 
+def test_external_claim_accepts_minor_wording_difference() -> None:
+    envelope = AnswerEnvelope(
+        "这款车的最高时速是407公里。",
+        False,
+        (AnswerClaim("最高速度为407公里", ("factory",), "407 km/h"),),
+    )
+    assert (
+        validate_answer(
+            envelope,
+            allowed_source_ids={"factory"},
+            evidence_required=True,
+            evidence_by_source={"factory": "The maximum speed is 407 km/h."},
+        )
+        == envelope.answer
+    )
+
+
+def test_evidence_span_tolerates_json_punctuation_only() -> None:
+    envelope = AnswerEnvelope(
+        "上海明天最高气温32度。",
+        False,
+        (AnswerClaim("明天最高气温32度", ("weather",), "temperature max c: 32"),),
+    )
+    assert (
+        validate_answer(
+            envelope,
+            allowed_source_ids={"weather"},
+            evidence_required=True,
+            evidence_by_source={"weather": '"temperature_max_c": 32'},
+        )
+        == envelope.answer
+    )
+
+
 def test_stable_math_accepts_equivalent_claim_wording_without_external_source() -> None:
     envelope = AnswerEnvelope(
         "等于二。",
