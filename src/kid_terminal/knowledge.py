@@ -22,6 +22,18 @@ class Evidence:
         return item
 
 
+@dataclass(frozen=True)
+class CurriculumTopic:
+    subject: str
+    grade_min: int
+    grade_max: int
+    domain: str
+    topic: str
+    points: tuple[str, ...]
+    source_title: str
+    source_url: str
+
+
 SUBJECT_TERMS = {
     "数学": "数学 数 加减乘除 分数 小数 方程 几何 图形 统计 概率",
     "语文": "语文 汉字 拼音 词语 句子 阅读 文章 中心思想 作文 古诗 文言文",
@@ -72,9 +84,40 @@ def is_time_sensitive(question: str) -> bool:
     return any(marker in normalized for marker in markers)
 
 
+def resolve_grade(question: str, configured_grade: int) -> int:
+    match = re.search(r"([一二三四五六1-6])年级", question)
+    if not match:
+        return configured_grade
+    values = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6}
+    value = match.group(1)
+    return int(value) if value.isdigit() else values[value]
+
+
 class CurriculumKnowledgeBase:
     def __init__(self, path: Path):
         self.path = path
+        self.topic_path = path.with_name("primary-curriculum.json")
+        self._topics = self._load_topics()
+
+    def _load_topics(self) -> tuple[CurriculumTopic, ...]:
+        if not self.topic_path.is_file():
+            return ()
+        payload = json.loads(self.topic_path.read_text())
+        topics = []
+        for item in payload.get("topics", []):
+            topics.append(
+                CurriculumTopic(
+                    subject=str(item["subject"]),
+                    grade_min=int(item["grade_min"]),
+                    grade_max=int(item["grade_max"]),
+                    domain=str(item["domain"]),
+                    topic=str(item["topic"]),
+                    points=tuple(str(point) for point in item["points"]),
+                    source_title=str(item["source_title"]),
+                    source_url=str(item["source_url"]),
+                )
+            )
+        return tuple(topics)
 
     @property
     def available(self) -> bool:
@@ -104,6 +147,24 @@ class CurriculumKnowledgeBase:
         )
         return [Evidence(*row) for row in ranked[:limit] if row[5].strip()]
 
+    def search_topics(self, question: str, grade: int, limit: int = 6) -> list[CurriculumTopic]:
+        subject = classify_subject(question)
+        normalized = re.sub(r"\s+", "", question).lower()
+        terms = set(re.findall(r"[A-Za-z]+|\d+", normalized))
+        terms.update(normalized[index : index + 2] for index in range(len(normalized) - 1))
+        ranked: list[tuple[int, CurriculumTopic]] = []
+        for item in self._topics:
+            if not item.grade_min <= grade <= item.grade_max:
+                continue
+            searchable = " ".join((item.domain, item.topic, *item.points)).lower()
+            score = (100 if item.subject == subject else 0) + sum(
+                len(term) for term in terms if term and term in searchable
+            )
+            if score:
+                ranked.append((score, item))
+        ranked.sort(key=lambda value: value[0], reverse=True)
+        return [item for _, item in ranked[:limit]]
+
 
 def render_evidence(items: list[Evidence], max_chars: int = 6000) -> str:
     sections = []
@@ -119,3 +180,15 @@ def render_evidence(items: list[Evidence], max_chars: int = 6000) -> str:
 
 def evidence_json(items: list[Evidence]) -> str:
     return json.dumps([item.as_dict() for item in items], ensure_ascii=False)
+
+
+def render_curriculum_topics(items: list[CurriculumTopic], max_chars: int = 2400) -> str:
+    sections = [
+        (
+            f"[{item.subject} {item.grade_min}-{item.grade_max}年级] "
+            f"{item.domain} / {item.topic}：{'；'.join(item.points)}\n"
+            f"依据：{item.source_title}（{item.source_url}）"
+        )
+        for item in items
+    ]
+    return "\n\n".join(sections)[:max_chars]

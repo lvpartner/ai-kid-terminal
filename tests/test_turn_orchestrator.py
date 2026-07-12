@@ -10,6 +10,9 @@ class FakeKnowledge:
     def search(self, question: str, limit: int = 4):
         return []
 
+    def search_topics(self, question: str, grade: int, limit: int = 6):
+        return []
+
 
 class FakeOfficialSources:
     async def retrieve(self, question: str):

@@ -237,6 +237,7 @@ def build_realtime_answer_instructions(
     conversation_context: str = "",
     official_evidence: str = "",
     web_evidence: str = "",
+    curriculum_topics: str = "",
 ) -> str:
     decision = route_question(question, version)
     source_text = render_evidence(evidence, max_chars=2400) or "没有本地资料索引。"
@@ -251,6 +252,11 @@ def build_realtime_answer_instructions(
 
 资料导航：
 {source_text}
+
+小学公开课程大纲与知识点导航：
+{curriculum_topics or "本题没有匹配到年级课程知识点。"}
+此导航只用于选择适合当前年级的讲解范围、术语和先后顺序，不是外部事实证据，不得据此添加题目
+未询问的精确数字、引语、人物或事件。
 
 最近已完成问答（从旧到新，最多8轮，内容已脱敏）：
 {conversation_context or "没有历史问答，这是新对话。"}

@@ -13,7 +13,7 @@ from ..answer_policy import (
     route_question,
 )
 from ..answer_validation import validate_answer
-from ..knowledge import CurriculumKnowledgeBase
+from ..knowledge import CurriculumKnowledgeBase, render_curriculum_topics, resolve_grade
 from ..official_sources import OfficialSourceRetriever, render_official_evidence
 from ..provider_interfaces import AnswerGenerator, SearchProvider
 from ..providers import ProviderError
@@ -61,6 +61,8 @@ class TurnOrchestrator:
     ) -> PreparedAnswer:
         if capability_answer := deterministic_capability_response(question):
             return PreparedAnswer(capability_answer, "capability_boundary")
+
+        grade = resolve_grade(question, grade)
 
         started = time.monotonic()
         decision = route_question(question)
@@ -129,6 +131,9 @@ class TurnOrchestrator:
             conversation_context=conversation_context,
             official_evidence=official_evidence,
             web_evidence=render_web_evidence(web_result),
+            curriculum_topics=render_curriculum_topics(
+                self.knowledge.search_topics(question, grade, limit=6)
+            ),
         )
         try:
             answer = ""

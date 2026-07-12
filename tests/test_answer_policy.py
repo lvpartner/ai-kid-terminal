@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -12,7 +13,12 @@ from kid_terminal.answer_policy import (
     question_needs_web_research,
     route_question,
 )
-from kid_terminal.knowledge import CurriculumKnowledgeBase, is_time_sensitive, render_evidence
+from kid_terminal.knowledge import (
+    CurriculumKnowledgeBase,
+    is_time_sensitive,
+    render_evidence,
+    resolve_grade,
+)
 
 
 def test_routes_current_curriculum_reasoning_and_safety():
@@ -71,6 +77,19 @@ def test_family_prompt_is_evidence_bounded_and_contextual():
     assert "不要为了有趣、具体或显得完整而扩写" in prompt
     assert "孩子：天空是什么颜色？" in prompt
     assert "用最近问答解析" in prompt
+
+
+def test_family_prompt_uses_curriculum_topics_only_for_scope():
+    navigation = "[数学 5-6年级] 第三学段 / 百分数：百分数；实际问题"
+    prompt = build_realtime_answer_instructions(
+        "百分数是什么意思？",
+        6,
+        [],
+        curriculum_topics=navigation,
+    )
+    assert navigation in prompt
+    assert "只用于选择适合当前年级的讲解范围" in prompt
+    assert "不是外部事实证据" in prompt
 
 
 def test_ambiguous_question_asks_once_instead_of_filling_gaps():
@@ -147,3 +166,41 @@ def test_curriculum_kb_returns_attributed_evidence(tmp_path: Path):
     rendered = render_evidence(evidence)
     assert "分数表示整体" not in rendered
     assert "必须打开官方来源核实" in rendered
+
+
+def test_primary_curriculum_map_covers_every_course_and_grade():
+    payload = json.loads(Path("knowledge/primary-curriculum.json").read_text())
+    expected = {
+        "语文",
+        "数学",
+        "英语",
+        "科学",
+        "道德与法治",
+        "信息科技",
+        "体育与健康",
+        "艺术",
+        "劳动",
+        "课程方案",
+    }
+    for subject in expected:
+        items = [item for item in payload["topics"] if item["subject"] == subject]
+        assert items
+        for grade in range(1, 7):
+            assert any(item["grade_min"] <= grade <= item["grade_max"] for item in items)
+
+
+def test_curriculum_topic_search_filters_by_grade():
+    knowledge = CurriculumKnowledgeBase(Path("knowledge/curriculum.db"))
+    grade_six = knowledge.search_topics("百分数怎么计算？", grade=6)
+    assert grade_six
+    assert grade_six[0].subject == "数学"
+    assert any("百分数" in point for point in grade_six[0].points)
+    grade_two = knowledge.search_topics("百分数怎么计算？", grade=2)
+    assert grade_two
+    assert all(item.grade_min <= 2 <= item.grade_max for item in grade_two)
+
+
+def test_question_grade_overrides_configured_default():
+    assert resolve_grade("请用六年级的方法解释百分数", 3) == 6
+    assert resolve_grade("这是2年级数学题", 4) == 2
+    assert resolve_grade("百分数是什么意思", 5) == 5
