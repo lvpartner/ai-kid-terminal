@@ -16,21 +16,31 @@ class FakeOfficialSources:
         return OfficialRetrievalResult(status="not_configured")
 
 
+class FailedOfficialSources:
+    async def retrieve(self, question: str):
+        return OfficialRetrievalResult(status="fetch_failed")
+
+
 class FakeWebSources:
     async def retrieve(self, question: str, research):
         return WebEvidenceResult(status="no_search_sources")
 
 
 class FakeWebSearch:
+    calls = 0
+
     async def research(self, question: str):
+        self.calls += 1
         return type("Research", (), {"text": "", "search_count": 0})()
 
 
 class FakeAnswerer:
     calls = 0
+    last_instructions = ""
 
     async def answer_envelope(self, instructions: str):
         self.calls += 1
+        self.last_instructions = instructions
         return AnswerEnvelope("熊猫是哺乳动物。", False)
 
 
@@ -80,6 +90,8 @@ async def test_stable_question_uses_structured_answer_path() -> None:
     assert result.text == "熊猫是哺乳动物。"
     assert result.evidence_status == "stable_knowledge"
     assert answerer.calls == 1
+    assert "不要求当轮官方来源；不得因此拒答" in answerer.last_instructions
+    assert "整个回答只能说" not in answerer.last_instructions
 
 
 async def test_current_question_without_verified_evidence_fails_closed() -> None:
@@ -90,6 +102,21 @@ async def test_current_question_without_verified_evidence_fails_closed() -> None
     assert result.text == SAFE_RESEARCH_FAILURE
     assert result.evidence_status == "evidence_unavailable"
     assert answerer.calls == 0
+
+
+async def test_current_question_falls_back_to_web_when_official_fetch_fails() -> None:
+    answerer = FakeAnswerer()
+    web_search = FakeWebSearch()
+    service = TurnOrchestrator(
+        knowledge=FakeKnowledge(),
+        official_sources=FailedOfficialSources(),
+        web_sources=FakeWebSources(),
+        web_search=web_search,
+        answerer=answerer,
+    )
+    result = await service.prepare("明天天气怎么样？", grade=3, conversation_context="")
+    assert result.text == SAFE_RESEARCH_FAILURE
+    assert web_search.calls == 2
 
 
 async def test_media_request_is_intercepted_before_model() -> None:

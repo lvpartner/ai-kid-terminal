@@ -65,12 +65,10 @@ class TurnOrchestrator:
         official_result = await self.official_sources.retrieve(question)
         official_elapsed = time.monotonic()
         official_status = official_result.status
-        official_evidence = render_official_evidence(official_result)
 
         web_result = WebEvidenceResult(status="not_needed")
         needs_web = official_status != "verified" and (
-            product_research
-            or (decision.route == AnswerRoute.CURRENT and official_status == "not_configured")
+            product_research or decision.route == AnswerRoute.CURRENT
         )
         if needs_web:
             web_result = WebEvidenceResult(status="research_error")
@@ -91,6 +89,12 @@ class TurnOrchestrator:
         strict_evidence = decision.route == AnswerRoute.CURRENT or product_research
         if strict_evidence and not official_result.verified and not web_result.verified:
             return PreparedAnswer(SAFE_RESEARCH_FAILURE, "evidence_unavailable")
+
+        official_evidence = (
+            render_official_evidence(official_result)
+            if strict_evidence or official_result.verified
+            else "本题属于稳定基础知识，不要求当轮官方来源；不得因此拒答。"
+        )
 
         source_ids = {
             *(item.source_id for item in official_result.evidence),
