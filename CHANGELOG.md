@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- Use the shorter, more natural Chinese waiting message “我想一想…”.
+
 ## 0.4.1
 
 - Complete the six-item architecture and performance implementation matrix.

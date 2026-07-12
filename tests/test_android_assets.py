@@ -14,4 +14,4 @@ def test_waiting_indicator_is_visual_and_semantically_neutral() -> None:
     assert "audio.play" not in waiting_block
     assert "waitingPrompts" not in source
     strings = Path("android/app/src/main/res/values/strings.xml").read_text()
-    assert '<string name="thinking">正在想一想…</string>' in strings
+    assert '<string name="thinking">我想一想…</string>' in strings
