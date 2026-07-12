@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-kid-terminal"
-version = "0.4.2"
+version = "0.4.3"
 description = "Server for a child-safe Android AI voice terminal"
 requires-python = ">=3.12,<3.13"
 dependencies = [

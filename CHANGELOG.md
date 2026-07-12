@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3
+
+- Show Android's required update confirmation outside Lock Task on non-Device-Owner phones.
+- Keep stable knowledge answerable without official-source refusal instructions.
+- Fall back to web research whenever a current-information structured source fails.
+
 ## 0.4.2
 
 - Use the shorter, more natural Chinese waiting message “我想一想…”.

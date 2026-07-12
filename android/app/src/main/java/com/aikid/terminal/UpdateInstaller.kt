@@ -16,6 +16,8 @@ import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
 
+const val UPDATE_CONFIRMATION_EXTRA = "com.aikid.terminal.UPDATE_CONFIRMATION"
+
 object UpdateInstaller {
     fun install(context: Context, apk: File): Int {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
@@ -59,8 +61,13 @@ class UpdateResultReceiver : BroadcastReceiver() {
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra(Intent.EXTRA_INTENT)
             }
-            confirmation?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (confirmation != null) context.startActivity(confirmation)
+            if (confirmation != null) {
+                context.startActivity(
+                    Intent(context, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .putExtra(UPDATE_CONFIRMATION_EXTRA, confirmation),
+                )
+            }
         }
         report(context, status)
     }

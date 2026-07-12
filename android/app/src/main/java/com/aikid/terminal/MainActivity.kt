@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity(), ProtocolClient.Listener {
     private var responseWireBytes = 0L
     private var responseFrames = 0
     private var responseFailed = false
+    private var updateConfirmationActive = false
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent != null) updateBattery(intent)
@@ -68,6 +69,16 @@ class MainActivity : ComponentActivity(), ProtocolClient.Listener {
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> if (!granted) report("microphone", "error") }
+    private val updateConfirmation = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        updateConfirmationActive = false
+        if (tokenStore.token() != null && voiceScreenActive) {
+            hideSystemUi()
+            Kiosk.enter(this)
+            protocol.connect()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,12 +98,13 @@ class MainActivity : ComponentActivity(), ProtocolClient.Listener {
         } else {
             activateChildMode()
         }
+        showUpdateConfirmation(intent)
         if (tokenStore.token() != null) CrashReporter.flush(this, tokenStore)
     }
 
     override fun onResume() {
         super.onResume()
-        if (tokenStore.token() != null && voiceScreenActive) {
+        if (!updateConfirmationActive && tokenStore.token() != null && voiceScreenActive) {
             hideSystemUi()
             Kiosk.enter(this)
             protocol.connect()
@@ -103,7 +115,21 @@ class MainActivity : ComponentActivity(), ProtocolClient.Listener {
         super.onNewIntent(intent)
         setIntent(intent)
         importProvisioningConfig()
+        showUpdateConfirmation(intent)
         if (tokenStore.token() == null) enrollFromProvisioningIntent()
+    }
+
+    private fun showUpdateConfirmation(source: Intent) {
+        val confirmation = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            source.getParcelableExtra(UPDATE_CONFIRMATION_EXTRA, Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            source.getParcelableExtra(UPDATE_CONFIRMATION_EXTRA)
+        } ?: return
+        source.removeExtra(UPDATE_CONFIRMATION_EXTRA)
+        updateConfirmationActive = true
+        Kiosk.exit(this)
+        updateConfirmation.launch(confirmation)
     }
 
     override fun onStart() {
