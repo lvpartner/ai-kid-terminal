@@ -31,7 +31,7 @@ def _claim_matches_answer(claim: str, answer: str) -> bool:
         return False
     return (
         compact_claim in compact_answer
-        or SequenceMatcher(None, compact_claim, compact_answer).ratio() >= 0.55
+        or SequenceMatcher(None, compact_claim, compact_answer).ratio() >= 0.30
     )
 
 

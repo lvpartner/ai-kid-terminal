@@ -90,6 +90,21 @@ def test_external_claim_accepts_minor_wording_difference() -> None:
     )
 
 
+def test_external_claim_rejects_unrelated_claim_even_with_real_source() -> None:
+    envelope = AnswerEnvelope(
+        "上海明天最高气温32度。",
+        False,
+        (AnswerClaim("这辆汽车是红色的", ("weather",), "temperature_max_c"),),
+    )
+    with pytest.raises(ProviderError, match="ledger does not match"):
+        validate_answer(
+            envelope,
+            allowed_source_ids={"weather"},
+            evidence_required=True,
+            evidence_by_source={"weather": '"temperature_max_c": 32'},
+        )
+
+
 def test_evidence_span_tolerates_json_punctuation_only() -> None:
     envelope = AnswerEnvelope(
         "上海明天最高气温32度。",
